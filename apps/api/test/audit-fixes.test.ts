@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import sharp from 'sharp';
 import { call,fixture,moderator,pair,testPassword,user,type Fixture } from './helpers.js';
+import { birthString } from '../src/security.js';
 
 let f:Fixture;
 before(async()=>{f=await fixture();});
@@ -30,7 +31,7 @@ test('beta age verification requires and applies signed provider birth date',asy
     const verified=await f.app.inject({method:'POST',url:'/v1/verification/age',headers:{'x-verification-signature':signature},payload:body});
     assert.equal(verified.statusCode,200,verified.body);
     const [row]=await f.db.query('SELECT age_verified,birth_date FROM users WHERE id=$1',[u.id]);
-    assert.equal(row.age_verified,true);assert.equal(String(row.birth_date).slice(0,10),birthDate);
+    assert.equal(row.age_verified,true);assert.equal(birthString(row.birth_date),birthDate);
   }finally{f.config.mode=previousMode;}
 });
 
