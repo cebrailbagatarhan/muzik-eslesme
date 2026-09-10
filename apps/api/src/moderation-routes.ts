@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { Context } from './context.js';
-import { deny } from './security.js';
+import { checkPassword,deny } from './security.js';
 export const REPORT_CATEGORIES=['harassment','threat','impersonation','underage','nudity','spam','fraud','other'] as const;
 export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
   app.post('/v1/blocks',async req=>{
@@ -21,7 +21,6 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
     const {id}=z.object({id:z.uuid()}).parse(req.params);
     return ctx.write(req,'user.unblocked',async q=>{
       await q.query('DELETE FROM blocks WHERE blocker_id=$1 AND blocked_id=$2',[req.actor.id,id]);
-      // Old matches and social consents are intentionally never reactivated.
       return {ok:true};
     });
   });
@@ -57,6 +56,23 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/reports',async req=>({items:await ctx.db.query('SELECT id,category,status,created_at FROM reports WHERE reporter_id=$1 ORDER BY created_at DESC',[req.actor.id])}));
   app.get('/v1/notices',async req=>({items:await ctx.db.query(`SELECT a.id,a.action,a.created_at FROM moderation_actions a JOIN reports r ON r.id=a.report_id WHERE r.target_user_id=$1 ORDER BY a.created_at DESC LIMIT 20`,[req.actor.id])}));
+
+  // Suspended users cannot hold an authenticated session, so appeals use fresh credentials and a strict public rate limit.
+  app.post('/v1/moderation/appeals',async req=>{
+    const {email,password,body}=z.object({email:z.email().max(254).transform(v=>v.trim().toLowerCase()),password:z.string().max(128),body:z.string().trim().min(20).max(2000)}).parse(req.body);
+    const [u]=await ctx.db.query('SELECT * FROM users WHERE email=$1',[email]);
+    if(!u||!await checkPassword(password,u.password_hash))deny(401,'invalid_credentials','E-posta veya parola yanlış.');
+    if(u.status!=='suspended')deny(409,'not_suspended','Bu hesap şu anda askıda değil.');
+    const result=await ctx.db.tx(async q=>{
+      const [existing]=await q.query("SELECT id FROM moderation_appeals WHERE user_id=$1 AND status='open' ORDER BY created_at DESC LIMIT 1",[u.id]);
+      if(existing)return {id:existing.id,status:'open'};
+      const [action]=await q.query("SELECT id FROM moderation_actions WHERE action='suspend' AND report_id IN (SELECT id FROM reports WHERE target_user_id=$1) ORDER BY created_at DESC LIMIT 1",[u.id]);
+      const id=randomUUID();await q.query('INSERT INTO moderation_appeals(id,user_id,action_id,body_ciphertext) VALUES($1,$2,$3,$4)',[id,u.id,action?.id??null,ctx.crypto.seal(body,`appeal:${id}`)]);
+      await ctx.audit(q,u.id,'moderation.appeal_created',id);return {id,status:'open'};
+    });
+    return result;
+  });
+
   app.get('/v1/admin/reports',async req=>ctx.db.tx(async q=>{
     await ctx.moderator(req,q);await ctx.audit(q,req.actor.id,'moderation.queue_viewed');
     return {items:await q.query(`SELECT r.id,r.category,r.priority,r.status,r.target_type,r.created_at,p.display_name AS target_name
@@ -71,14 +87,14 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
       actions:await q.query('SELECT action,created_at FROM moderation_actions WHERE report_id=$1 ORDER BY created_at',[id])};
   }));
   app.post('/v1/admin/reports/:id/actions',async req=>{
-    const {id}=z.object({id:z.uuid()}).parse(req.params),{action,note}=z.object({action:z.enum(['dismiss','warn','suspend','remove_content']),note:z.string().trim().min(5).max(1000)}).parse(req.body);let target='';
+    const {id}=z.object({id:z.uuid()}).parse(req.params),{action,note,suspendDays}=z.object({action:z.enum(['dismiss','warn','suspend','remove_content']),note:z.string().trim().min(5).max(1000),suspendDays:z.number().int().min(1).max(90).default(7)}).parse(req.body);let target='';
     const result=await ctx.write(req,'moderation.action',async q=>{
       await ctx.moderator(req,q);const [r]=await q.query('SELECT * FROM reports WHERE id=$1 FOR UPDATE',[id]);if(!r)deny(404,'not_found','Rapor bulunamadı.');
       if(r.status!=='open')deny(409,'report_closed','Bu rapor daha önce sonuçlandırılmış.');
       if(r.target_user_id===req.actor.id||r.reporter_id===req.actor.id)deny(403,'conflict_of_interest','Kendi taraf olduğun raporu sonuçlandıramazsın.');
       target=r.target_user_id;
       if(action==='suspend'){
-        await q.query("UPDATE users SET status='suspended' WHERE id=$1",[target]);
+        await q.query("UPDATE users SET status='suspended',suspended_until=now()+($2::text || ' days')::interval,suspension_reason_ciphertext=$3 WHERE id=$1",[target,suspendDays,ctx.crypto.seal(note,`suspension:${target}`)]);
         await q.query('DELETE FROM sessions WHERE user_id=$1',[target]);
         await q.query("UPDATE matches SET status='removed' WHERE user_a=$1 OR user_b=$1",[target]);
         await q.query('DELETE FROM instagram_share_consents WHERE match_id IN (SELECT id FROM matches WHERE user_a=$1 OR user_b=$1)',[target]);
@@ -89,8 +105,27 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
         else await q.query("UPDATE profiles SET bio='' WHERE user_id=$1",[target]);
       }
       const actionId=randomUUID();await q.query('INSERT INTO moderation_actions(id,report_id,actor_id,action,note_ciphertext) VALUES($1,$2,$3,$4,$5)',[actionId,id,req.actor.id,action,ctx.crypto.seal(note,`moderation:${actionId}`)]);
-      await q.query("UPDATE reports SET status='resolved' WHERE id=$1",[id]);return {ok:true};
+      await q.query("UPDATE reports SET status='resolved' WHERE id=$1",[id]);return {ok:true,suspendedUntil:action==='suspend'?new Date(Date.now()+suspendDays*86400000).toISOString():null};
     },{guard:q=>ctx.moderator(req,q)});
     if(action==='suspend')ctx.closeUser(target);await ctx.changed([target]);return result;
+  });
+
+  app.get('/v1/admin/appeals',async req=>ctx.db.tx(async q=>{
+    await ctx.moderator(req,q);await ctx.audit(q,req.actor.id,'moderation.appeals_viewed');
+    const rows=await q.query(`SELECT a.id,a.user_id,a.body_ciphertext,a.status,a.created_at,p.display_name,u.suspended_until
+      FROM moderation_appeals a JOIN users u ON u.id=a.user_id JOIN profiles p ON p.user_id=a.user_id
+      ORDER BY a.status='open' DESC,a.created_at LIMIT 100`);
+    return {items:rows.map(a=>({id:a.id,userId:a.user_id,displayName:a.display_name,status:a.status,createdAt:a.created_at,suspendedUntil:a.suspended_until,body:ctx.crypto.open(a.body_ciphertext,`appeal:${a.id}`)}))};
+  }));
+  app.post('/v1/admin/appeals/:id/actions',async req=>{
+    const {id}=z.object({id:z.uuid()}).parse(req.params),{decision,note}=z.object({decision:z.enum(['accept','reject']),note:z.string().trim().min(5).max(1000)}).parse(req.body);let target='';
+    const result=await ctx.write(req,'moderation.appeal_decided',async q=>{
+      await ctx.moderator(req,q);const [appeal]=await q.query('SELECT * FROM moderation_appeals WHERE id=$1 FOR UPDATE',[id]);if(!appeal)deny(404,'not_found','İtiraz bulunamadı.');
+      if(appeal.status!=='open')deny(409,'appeal_closed','Bu itiraz daha önce sonuçlandırılmış.');target=appeal.user_id;
+      if(decision==='accept')await q.query("UPDATE users SET status='active',suspended_until=NULL,suspension_reason_ciphertext=NULL WHERE id=$1",[target]);
+      await q.query("UPDATE moderation_appeals SET status=$2,reviewed_by=$3,review_note_ciphertext=$4,reviewed_at=now() WHERE id=$1",[id,decision==='accept'?'accepted':'rejected',req.actor.id,ctx.crypto.seal(note,`appeal-review:${id}`)]);
+      await ctx.audit(q,req.actor.id,decision==='accept'?'moderation.appeal_accepted':'moderation.appeal_rejected',id);return {ok:true};
+    },{guard:q=>ctx.moderator(req,q)});
+    await ctx.changed([target]);return result;
   });
 }
