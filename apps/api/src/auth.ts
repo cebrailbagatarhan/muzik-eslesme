@@ -16,7 +16,7 @@ export async function issueSession(q:Query,userId:string,family=randomUUID()) {
 async function actionToken(q:Query,userId:string,purpose:ActionPurpose) {
   const token=secret(),minutes=purpose==='email_verify'?1440:30,id=randomUUID();
   await q.query('DELETE FROM auth_action_tokens WHERE user_id=$1 AND purpose=$2 AND used_at IS NULL',[userId,purpose]);
-  await q.query(`INSERT INTO auth_action_tokens(id,user_id,purpose,token_hash,expires_at) VALUES($1,$2,$3,$4,now()+($5 || ' minutes')::interval)`,[id,userId,purpose,sha(token),minutes]);
+  await q.query(`INSERT INTO auth_action_tokens(id,user_id,purpose,token_hash,expires_at) VALUES($1,$2,$3,$4,now()+($5::text || ' minutes')::interval)`,[id,userId,purpose,sha(token),minutes]);
   return {token,expiresIn:minutes*60};
 }
 async function deliver(ctx:Context,purpose:ActionPurpose,email:string,token:string,expiresIn:number) {
@@ -138,7 +138,6 @@ export async function authRoutes(app:FastifyInstance,ctx:Context) {
       return {ok:true,expiresIn:600};
     });
   });
-  // Provider-neutral, signed server callback. It cannot be called by the mobile client.
   app.post('/v1/verification/age',async req=>{
     if(!ctx.config.ageSecret)deny(503,'not_configured','Yaş doğrulama sağlayıcısı yapılandırılmamış.');
     const data=z.object({eventId:z.string().min(12).max(128),userId:z.uuid(),verified:z.boolean(),timestamp:z.number().int()}).strict().parse(req.body);
