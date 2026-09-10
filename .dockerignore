@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+data
+**/.env
+.git
+.github
+apps/mobile/.expo
+apps/mobile/dist
+coverage
+*.log
