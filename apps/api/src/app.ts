@@ -40,13 +40,14 @@ export async function buildApp(config:Config,db:Database,options:{request?:typeo
     }
     if(n>limit*config.rateMultiplier)deny(429,'rate_limited','Çok hızlı işlem yapıyorsun. Biraz sonra tekrar dene.');
   }
-  const publicRoutes=new Set(['/health','/v1/config','/v1/auth/register','/v1/auth/login','/v1/auth/refresh','/v1/verification/age','/v1/integrations/spotify/callback','/v1/events']);
+  const publicRoutes=new Set(['/health','/v1/config','/v1/auth/register','/v1/auth/login','/v1/auth/refresh','/v1/auth/email-verification/request','/v1/auth/email-verification/confirm','/v1/auth/password-reset/request','/v1/auth/password-reset/confirm','/v1/moderation/appeals','/v1/verification/age','/v1/integrations/spotify/callback','/v1/events']);
+  const sensitivePublic=new Set(['/v1/auth/register','/v1/auth/login','/v1/auth/refresh','/v1/auth/email-verification/request','/v1/auth/email-verification/confirm','/v1/auth/password-reset/request','/v1/auth/password-reset/confirm','/v1/moderation/appeals']);
   app.decorateRequest('actor',null as unknown as import('./context.js').Actor);
   app.addHook('onRequest',async(req,reply)=>{
     reply.header('Cache-Control','no-store');
     if(req.method==='OPTIONS')return;
     await rate(`ip:${req.ip}`,600);
-    if(['/v1/auth/register','/v1/auth/login','/v1/auth/refresh'].includes(req.routeOptions.url??''))await rate(`auth:${req.ip}`,15,300000);
+    if(sensitivePublic.has(req.routeOptions.url??''))await rate(`auth:${req.ip}`,15,300000);
   });
   app.addHook('preHandler',async req=>{
     if(req.method==='OPTIONS'||publicRoutes.has(req.routeOptions.url??''))return;
@@ -64,7 +65,6 @@ export async function buildApp(config:Config,db:Database,options:{request?:typeo
     if(error instanceof z.ZodError)return reply.code(400).send({error:{code:'validation_error',message:'Gönderilen bilgileri kontrol et.',fields:error.issues.map(i=>i.path.join('.'))}});
     if((error as any).code==='23505')return reply.code(409).send({error:{code:'conflict',message:'Bu işlem daha önce yapılmış. Durumu yenile.'}});
     if((error as any).statusCode===413)return reply.code(413).send({error:{code:'payload_too_large',message:'Gönderilen dosya çok büyük.'}});
-    // Never log request bodies, tokens, database errors or decrypted content.
     req.log.error({event:'request.failed',requestId:req.id},'İşlem tamamlanamadı');
     return reply.code(500).send({error:{code:'internal_error',message:'İşlem tamamlanamadı. Tekrar dene.'}});
   });
