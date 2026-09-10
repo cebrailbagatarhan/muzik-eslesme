@@ -13,6 +13,7 @@ import { authRoutes } from './auth.js';
 import { coreRoutes } from './core-routes.js';
 import { socialRoutes } from './social-routes.js';
 import { moderationRoutes } from './moderation-routes.js';
+import { privacyRoutes } from './privacy-routes.js';
 import { photoRoutes } from './photo-routes.js';
 import { SpotifyAdapter,spotifyRoutes } from './spotify.js';
 export async function buildApp(config:Config,db:Database,options:{request?:typeof fetch;logger?:boolean}={}) {
@@ -109,6 +110,6 @@ export async function buildApp(config:Config,db:Database,options:{request?:typeo
   app.addHook('onClose',async()=>{clearInterval(heartbeat);for(const socket of clients.keys())socket.close(1001);await subscriber?.close();await redis?.close();});
   app.get('/health',async()=>{await db.query('SELECT 1');if(redis)await redis.ping();return {status:'ok'};});
   app.get('/v1/config',async()=>({name:'Ahenk',mode:config.mode,minRatings:config.minRatings,spotifyEnabled:config.spotifyEnabled,termsVersion:'2026-09-demo',catalogIsDemo:config.mode==='demo'}));
-  await authRoutes(app,ctx);await coreRoutes(app,ctx);await socialRoutes(app,ctx);await moderationRoutes(app,ctx);await photoRoutes(app,ctx,options.request);await spotifyRoutes(app,ctx,spotify);
+  await authRoutes(app,ctx);await coreRoutes(app,ctx);await socialRoutes(app,ctx);await moderationRoutes(app,ctx);await privacyRoutes(app,ctx);await photoRoutes(app,ctx,options.request);await spotifyRoutes(app,ctx,spotify);
   await app.ready();return {app,ctx,spotify};
 }
