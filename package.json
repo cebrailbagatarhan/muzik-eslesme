@@ -1,0 +1,21 @@
+{
+  "name": "muzik-eslesme",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bağımsız müzik tercihleriyle eşleşme ve sohbet uygulaması",
+  "workspaces": ["apps/api", "apps/mobile"],
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "demo": "node scripts/demo.mjs",
+    "setup": "node scripts/setup.mjs",
+    "dev": "npm run dev -w @ahenk/api",
+    "mobile": "npm run start -w @ahenk/mobile",
+    "web": "npm run web -w @ahenk/mobile",
+    "seed": "npm run seed -w @ahenk/api",
+    "test": "npm run test -w @ahenk/api",
+    "typecheck": "npm run typecheck --workspaces",
+    "build": "npm run build -w @ahenk/api",
+    "check": "npm run typecheck && npm test && npm run build",
+    "moderator": "npm run moderator -w @ahenk/api"
+  }
+}

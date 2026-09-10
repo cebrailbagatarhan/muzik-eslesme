@@ -1,0 +1,15 @@
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS evidence_ciphertext text;
+CREATE INDEX IF NOT EXISTS profiles_city_intention_idx ON profiles(city,intention,user_id);
+CREATE INDEX IF NOT EXISTS blocks_reverse_idx ON blocks(blocked_id,blocker_id);
+CREATE INDEX IF NOT EXISTS reports_reporter_idx ON reports(reporter_id,target_user_id);
+CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(priority,created_at) WHERE status='open';
+CREATE INDEX IF NOT EXISTS history_latest_idx ON track_swipe_history(user_id,occurred_at DESC,id DESC) WHERE undone=false;
+CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS person_swipes_target_idx ON person_swipes(target_id);
+CREATE INDEX IF NOT EXISTS photos_user_idx ON profile_photos(user_id,status);
+CREATE INDEX IF NOT EXISTS playlist_match_idx ON playlist_drafts(match_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS messages_sender_idx ON messages(sender_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS consents_user_idx ON consents(user_id);
+CREATE INDEX IF NOT EXISTS audit_actor_idx ON audit_events(actor_id);
+CREATE INDEX IF NOT EXISTS moderation_report_idx ON moderation_actions(report_id);
+CREATE INDEX IF NOT EXISTS feed_target_idx ON feed_impressions(target_id);
