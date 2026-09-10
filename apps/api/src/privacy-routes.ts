@@ -18,7 +18,7 @@ export async function privacyRoutes(app:FastifyInstance,ctx:Context) {
     };
   });
   app.put('/v1/consents/:kind',async req=>{
-    const {kind}=z.object({kind:z.enum(optionalKinds)}).parse(req.params),{granted}=z.object({granted:z.boolean()}).strict().parse(req.body);
+    const {kind}=z.object({kind:z.enum(optionalKinds)}).parse(req.params),{granted}=z.object({granted:z.boolean()}).parse(req.body);
     return ctx.write(req,'consent.updated',async q=>{
       await q.query('UPDATE consents SET revoked_at=now() WHERE user_id=$1 AND kind=$2 AND revoked_at IS NULL',[req.actor.id,kind]);
       if(granted)await q.query('INSERT INTO consents(id,user_id,kind,version) VALUES($1,$2,$3,$4)',[randomUUID(),req.actor.id,kind,consentVersions[kind]]);
