@@ -2,6 +2,8 @@
 
 Eklenen fizibilite rehberine göre hazırlanan çalıştırılabilir başlangıç sürümü. Türkçe Expo / React Native istemcisi, TypeScript / Fastify API, PostgreSQL veri modeli ve moderasyon ekranı içerir. Müzik zevki yalnızca uygulama içindeki açık seçimlerden hesaplanır.
 
+Ayrıntılı ayarlar, servis bağlantıları ve sorun giderme için [Operasyon rehberi](docs/OPERASYON.md); teslim edilenlerle henüz geliştirilmeyen işlerin ayrımı için [Teslim kapsamı](docs/KAPSAM.md).
+
 ## Hızlı kurulum
 
 Bilgisayarında **Node.js 24** kurulu olmalı. ZIP'i açıp `muzik-eslesme` klasöründe terminal aç:
@@ -14,6 +16,8 @@ npm run demo
 Tarayıcıda **http://127.0.0.1:8081** adresini aç. API, 4000 portunda çalışır. Durdurmak için terminalde Ctrl+C kullan.
 
 Demo komutu yerel ayar ve şifreleme anahtarlarını oluşturur, örnek verileri ekler ve uygulamayı başlatır. Docker gerekmez; PostgreSQL'in gömülü PGlite sürümü kullanılır. Yerel veriler `data/postgres` altında kalır. `apps/api/.env` ve `data/` depoya eklenmez.
+
+GitHub deposu tüm kaynakları içerir; ZIP ayrıca hazır web çıktısını içerir. GitHub'dan indirilen kaynaklarda ilk `npm run demo` web çıktısını da oluşturur.
 
 Örnek hesaplar: `ada@demo.local`, `deniz@demo.local`, `ege@demo.local`, `lalin@demo.local`, `mert@demo.local`. Ortak demo parolası: **AhenkDemo!2026**. Giriş ekranındaki örnek hesap düğmelerini de kullanabilirsin. Ada ve Deniz arasında deneme eşleşmesi hazırdır.
 
@@ -84,6 +88,7 @@ apps/api/migrations/   PostgreSQL migration dosyaları
 apps/api/test/         İşlev ve güvenlik testleri
 apps/mobile/src/       Türkçe Expo ekranları
 scripts/              Kurulum, demo başlatma ve web sunucusu
+docs/                 Operasyon rehberi ve teslim kapsamı
 ```
 
 API yazma işlemleri `Idempotency-Key` başlığını kullanır. Kimlik doğrulama ve hesap silme işlemleri kendi oturum kurallarıyla korunur. Günlük kişi gösterimi 100, kişi geçme bekleme süresi 7 gündür. İstek tekrar kayıtları 24 saat saklanır. Hassas içerik API loglarına yazılmaz.
