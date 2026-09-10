@@ -43,7 +43,6 @@ export async function coreRoutes(app:FastifyInstance,ctx:Context) {
     const result=await ctx.write(req,'instagram.updated',async q=>{
       await q.query(`INSERT INTO instagram_accounts(user_id,username_ciphertext) VALUES($1,$2)
         ON CONFLICT(user_id) DO UPDATE SET username_ciphertext=EXCLUDED.username_ciphertext`,[req.actor.id,ctx.crypto.seal(name,`instagram:${req.actor.id}`)]);
-      // Changing the account resets BOTH participants' consent in every affected match.
       await q.query('DELETE FROM instagram_share_consents WHERE match_id IN (SELECT id FROM matches WHERE user_a=$1 OR user_b=$1)',[req.actor.id]);
       return {ok:true};
     });
@@ -142,14 +141,29 @@ export async function coreRoutes(app:FastifyInstance,ctx:Context) {
   });
   app.get('/v1/account/export',async req=>ctx.db.tx(async q=>{
     const u=await ctx.user(q,req.actor.id);
-    const profile={displayName:u.display_name,city:u.city,bio:u.bio,birthDate:birthString(u.birth_date),genres:u.genres,artists:u.artists,intention:u.intention,ageMin:u.age_min,ageMax:u.age_max,allowExplicit:u.allow_explicit,exploration:u.exploration};
+    const profile={displayName:u.display_name,city:u.city,bio:u.bio,birthDate:birthString(u.birth_date),genres:u.genres,artists:u.artists,intention:u.intention,ageMin:u.age_min,ageMax:u.age_max,allowExplicit:u.allow_explicit,exploration:u.exploration,ageVerified:u.age_verified,emailVerified:u.email_verified};
     const swipes=await q.query('SELECT item_id,action,occurred_at FROM track_swipes WHERE user_id=$1',[u.id]);
-    const messages=await q.query('SELECT id,match_id,body_ciphertext,created_at,deleted_at FROM messages WHERE sender_id=$1',[u.id]);
-    const consents=await q.query('SELECT kind,version,granted_at,revoked_at FROM consents WHERE user_id=$1',[u.id]);
+    const personSwipes=await q.query('SELECT target_id,action,created_at FROM person_swipes WHERE actor_id=$1 ORDER BY created_at',[u.id]);
+    const matches=await q.query('SELECT id,user_a,user_b,status,matched_at,algorithm_version FROM matches WHERE user_a=$1 OR user_b=$1 ORDER BY matched_at',[u.id]);
+    const messages=await q.query('SELECT id,match_id,body_ciphertext,created_at,read_at,deleted_at FROM messages WHERE sender_id=$1 ORDER BY created_at',[u.id]);
+    const consents=await q.query('SELECT kind,version,granted_at,revoked_at FROM consents WHERE user_id=$1 ORDER BY granted_at',[u.id]);
+    const blocks=await q.query('SELECT blocked_id,created_at FROM blocks WHERE blocker_id=$1 ORDER BY created_at',[u.id]);
+    const reports=await q.query('SELECT id,target_user_id,target_type,target_id,category,status,priority,created_at FROM reports WHERE reporter_id=$1 ORDER BY created_at',[u.id]);
+    const photos=await q.query('SELECT id,mime_type,status,created_at FROM profile_photos WHERE user_id=$1 ORDER BY created_at',[u.id]);
+    const playlists=await q.query('SELECT id,match_id,algorithm_version,revision,items,created_at FROM playlist_drafts WHERE match_id=ANY($1::uuid[]) ORDER BY created_at',[matches.map(m=>m.id)]);
+    const appeals=await q.query('SELECT id,action_id,status,body_ciphertext,review_note_ciphertext,created_at,reviewed_at FROM moderation_appeals WHERE user_id=$1 ORDER BY created_at',[u.id]);
+    const spotifyExports=await q.query('SELECT id,draft_id,revision,status,playlist_id,playlist_url,retry_at,last_error FROM spotify_exports WHERE user_id=$1 ORDER BY id',[u.id]);
+    const audit=await q.query('SELECT event_type,subject_id,created_at FROM audit_events WHERE actor_id=$1 ORDER BY created_at',[u.id]);
+    const notices=await q.query('SELECT a.id,a.action,a.note_ciphertext,a.created_at FROM moderation_actions a JOIN reports r ON r.id=a.report_id WHERE r.target_user_id=$1 ORDER BY a.created_at',[u.id]);
     const [ig]=await q.query('SELECT username_ciphertext FROM instagram_accounts WHERE user_id=$1',[u.id]);
+    const [spotifyConnection]=await q.query('SELECT expires_at FROM oauth_connections WHERE user_id=$1',[u.id]);
     await ctx.audit(q,u.id,'account.exported');
-    return {email:u.email,profile,swipes,consents,instagram:ig?ctx.crypto.open(ig.username_ciphertext,`instagram:${u.id}`):null,
-      messages:messages.map(m=>({id:m.id,matchId:m.match_id,body:m.body_ciphertext?ctx.crypto.open(m.body_ciphertext,`message:${m.id}`):null,createdAt:m.created_at,deletedAt:m.deleted_at}))};
+    return {email:u.email,profile,swipes,personSwipes,matches,blocks,reports,photos,consents,instagram:ig?ctx.crypto.open(ig.username_ciphertext,`instagram:${u.id}`):null,
+      spotifyConnection:spotifyConnection?{connected:true,accessExpiresAt:spotifyConnection.expires_at}:{connected:false},spotifyExports,audit,
+      appeals:appeals.map(a=>({id:a.id,actionId:a.action_id,status:a.status,body:ctx.crypto.open(a.body_ciphertext,`appeal:${a.id}`),reviewNote:a.review_note_ciphertext?ctx.crypto.open(a.review_note_ciphertext,`appeal-review:${a.id}`):null,createdAt:a.created_at,reviewedAt:a.reviewed_at})),
+      notices:notices.map(n=>({id:n.id,action:n.action,note:ctx.crypto.open(n.note_ciphertext,`moderation:${n.id}`),createdAt:n.created_at})),
+      playlistDrafts:playlists,
+      messages:messages.map(m=>({id:m.id,matchId:m.match_id,body:m.body_ciphertext?ctx.crypto.open(m.body_ciphertext,`message:${m.id}`):null,createdAt:m.created_at,readAt:m.read_at,deletedAt:m.deleted_at}))};
   }));
   app.delete('/v1/account',async req=>{
     const {password}=z.object({password:z.string().max(128)}).parse(req.body);
