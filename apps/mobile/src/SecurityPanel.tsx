@@ -9,7 +9,7 @@ export function SecurityPanel(){
   useEffect(()=>{void load().catch(e=>setError(e.message));},[]);
   async function run(fn:()=>Promise<unknown>,message:string){setBusy(true);setError('');setNotice('');try{await fn();setNotice(message);}catch(e:any){setError(e.message);}finally{setBusy(false);}}
   async function changePassword(){await api.post('/v1/auth/password/change',{currentPassword,newPassword});setCurrentPassword('');setNewPassword('');}
-  async function setConsent(kind:string,granted:boolean){await api.put(`/v1/consents/${kind}`,{granted,version:'2026-09-v1'});await load();}
+  async function setConsent(kind:string,granted:boolean){await api.put(`/v1/consents/${kind}`,{granted});await load();}
   const names:Record<string,{title:string;detail:string}>={
     'product-analytics':{title:'Ürün analitiği',detail:'Hangi ekranların işe yaradığını anlamak için kimlikten ayrıştırılmış kullanım ölçümleri.'},
     'research-contact':{title:'Araştırma iletişimi',detail:'Ürün araştırması ve gönüllü kullanıcı görüşmeleri için iletişim izni.'},
