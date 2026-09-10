@@ -8,7 +8,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,4 +16,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run check
+      - name: Export Expo web bundle
+        run: npm run export:web -w @ahenk/mobile
+        env:
+          EXPO_PUBLIC_API_URL: http://127.0.0.1:4000
+      - name: Build API Docker image
+        run: docker build -t ahenk-api:test .

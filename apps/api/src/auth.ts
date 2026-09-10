@@ -3,9 +3,10 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { Context } from './context.js';
 import type { Query } from './db.js';
-import { ageOn,checkPassword,deny,passwordHash,secret,sha,verifyTotp } from './security.js';
+import { ageOn,birthString,checkPassword,deny,passwordHash,secret,sha,verifyTotp } from './security.js';
+const birthDateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const credentials=z.object({email:z.email().max(254).transform(v=>v.trim().toLowerCase()),password:z.string().min(12).max(128)});
-const registerSchema=credentials.extend({displayName:z.string().trim().min(2).max(40),city:z.string().trim().min(2).max(60),birthDate:z.string(),acceptedTerms:z.literal(true)});
+const registerSchema=credentials.extend({displayName:z.string().trim().min(2).max(40),city:z.string().trim().min(2).max(60),birthDate:birthDateSchema,acceptedTerms:z.literal(true)});
 type ActionPurpose='email_verify'|'password_reset';
 export async function issueSession(q:Query,userId:string,family=randomUUID()) {
   const accessToken=secret(),refreshToken=secret();
@@ -140,18 +141,30 @@ export async function authRoutes(app:FastifyInstance,ctx:Context) {
   });
   app.post('/v1/verification/age',async req=>{
     if(!ctx.config.ageSecret)deny(503,'not_configured','Yaş doğrulama sağlayıcısı yapılandırılmamış.');
-    const data=z.object({eventId:z.string().min(12).max(128),userId:z.uuid(),verified:z.boolean(),timestamp:z.number().int()}).strict().parse(req.body);
+    const data=z.object({eventId:z.string().min(12).max(128),userId:z.uuid(),verified:z.boolean(),birthDate:birthDateSchema.optional(),timestamp:z.number().int()}).strict().parse(req.body);
+    if(ctx.config.mode==='beta'&&data.verified&&!data.birthDate)deny(400,'invalid_age_attestation','Doğrulanmış sonuç için imzalı doğum tarihi gerekli.');
     if(Math.abs(Date.now()/1000-data.timestamp)>300)deny(401,'invalid_signature','İmza süresi dolmuş.');
-    const expected=createHmac('sha256',ctx.config.ageSecret).update(`${data.eventId}.${data.userId}.${data.verified}.${data.timestamp}`).digest('hex');
+    const material=data.birthDate!==undefined||ctx.config.mode==='beta'
+      ?`${data.eventId}.${data.userId}.${data.verified}.${data.birthDate??''}.${data.timestamp}`
+      :`${data.eventId}.${data.userId}.${data.verified}.${data.timestamp}`;
+    const expected=createHmac('sha256',ctx.config.ageSecret).update(material).digest('hex');
     const signature=req.headers['x-verification-signature'];
     if(typeof signature!=='string'||signature.length!==expected.length||!timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))deny(401,'invalid_signature','Geçersiz imza.');
-    return ctx.db.tx(async q=>{
-      if((await q.query('SELECT 1 FROM verification_events WHERE id=$1',[data.eventId])).length)return {ok:true};
+    const result=await ctx.db.tx(async q=>{
+      if((await q.query('SELECT 1 FROM verification_events WHERE id=$1',[data.eventId])).length)return {ok:true,duplicate:true,verified:data.verified};
+      const [current]=await q.query('SELECT birth_date FROM users WHERE id=$1',[data.userId]);if(!current)deny(404,'not_found','Kayıt bulunamadı.');
+      const attestedBirthDate=data.birthDate??birthString(current.birth_date);
+      if(data.verified){const age=ageOn(attestedBirthDate);if(age<18||age>99)deny(400,'invalid_age_attestation','Sağlayıcının doğruladığı yaş kabul edilen aralıkta değil.');}
       await q.query('INSERT INTO verification_events(id) VALUES($1)',[data.eventId]);
-      const [u]=await q.query('UPDATE users SET age_verified=$2 WHERE id=$1 RETURNING id',[data.userId,data.verified]);
-      if(!u)deny(404,'not_found','Kayıt bulunamadı.');
-      if(!data.verified)await q.query("UPDATE matches SET status='removed' WHERE user_a=$1 OR user_b=$1",[data.userId]);
-      await ctx.audit(q,data.userId,'age.verified');return {ok:true};
+      if(data.verified)await q.query('UPDATE users SET age_verified=true,birth_date=$2 WHERE id=$1',[data.userId,attestedBirthDate]);
+      else{
+        await q.query('UPDATE users SET age_verified=false WHERE id=$1',[data.userId]);
+        await q.query("UPDATE matches SET status='removed' WHERE user_a=$1 OR user_b=$1",[data.userId]);
+        await q.query('DELETE FROM sessions WHERE user_id=$1',[data.userId]);
+      }
+      await ctx.audit(q,data.userId,data.verified?'age.verified':'age.rejected');return {ok:true,duplicate:false,verified:data.verified};
     });
+    if(!result.duplicate){if(!result.verified)ctx.closeUser(data.userId);await ctx.changed([data.userId]);}
+    return {ok:true};
   });
 }

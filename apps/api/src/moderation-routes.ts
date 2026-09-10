@@ -39,11 +39,11 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
         await ctx.activeMatch(q,m.match_id,req.actor.id);targetUser=m.sender_id;
         evidence=m.body_ciphertext?ctx.crypto.open(m.body_ciphertext,`message:${m.id}`):'Silinmiş mesaj';
       }else{
-        const [p]=await q.query("SELECT user_id FROM profile_photos WHERE id=$1 AND status='approved'",[input.targetId]);if(!p)deny(404,'not_found','Fotoğraf bulunamadı.');
+        const [p]=await q.query("SELECT user_id,content_ciphertext,mime_type FROM profile_photos WHERE id=$1 AND status='approved'",[input.targetId]);if(!p||!p.content_ciphertext)deny(404,'not_found','Fotoğraf bulunamadı.');
         targetUser=p.user_id;
         const seen=await q.query('SELECT 1 FROM feed_impressions WHERE viewer_id=$1 AND target_id=$2 UNION ALL SELECT 1 FROM matches WHERE (user_a=$1 AND user_b=$2) OR (user_a=$2 AND user_b=$1) LIMIT 1',[req.actor.id,targetUser]);
         if(!seen.length)deny(404,'not_found','Fotoğrafa erişilemiyor.');
-        evidence=JSON.stringify({photoId:input.targetId});
+        evidence=`data:${p.mime_type};base64,${ctx.crypto.open(p.content_ciphertext,`photo:${input.targetId}`)}`;
       }
       if(targetUser===req.actor.id)deny(400,'invalid_target','Kendini şikâyet edemezsin.');
       const id=randomUUID();
@@ -55,7 +55,10 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
     });await ctx.changed([req.actor.id,targetUser]);return result;
   });
   app.get('/v1/reports',async req=>({items:await ctx.db.query('SELECT id,category,status,created_at FROM reports WHERE reporter_id=$1 ORDER BY created_at DESC',[req.actor.id])}));
-  app.get('/v1/notices',async req=>({items:await ctx.db.query(`SELECT a.id,a.action,a.created_at FROM moderation_actions a JOIN reports r ON r.id=a.report_id WHERE r.target_user_id=$1 ORDER BY a.created_at DESC LIMIT 20`,[req.actor.id])}));
+  app.get('/v1/notices',async req=>ctx.db.tx(async q=>{
+    const rows=await q.query(`SELECT a.id,a.action,a.note_ciphertext,a.created_at FROM moderation_actions a JOIN reports r ON r.id=a.report_id WHERE r.target_user_id=$1 ORDER BY a.created_at DESC LIMIT 20`,[req.actor.id]);
+    return {items:rows.map(a=>({id:a.id,action:a.action,note:ctx.crypto.open(a.note_ciphertext,`moderation:${a.id}`),createdAt:a.created_at}))};
+  }));
 
   // Suspended users cannot hold an authenticated session, so appeals use fresh credentials and a strict public rate limit.
   app.post('/v1/moderation/appeals',async req=>{
@@ -64,11 +67,19 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
     if(!u||!await checkPassword(password,u.password_hash))deny(401,'invalid_credentials','E-posta veya parola yanlış.');
     if(u.status!=='suspended')deny(409,'not_suspended','Bu hesap şu anda askıda değil.');
     const result=await ctx.db.tx(async q=>{
-      const [existing]=await q.query("SELECT id FROM moderation_appeals WHERE user_id=$1 AND status='open' ORDER BY created_at DESC LIMIT 1",[u.id]);
-      if(existing)return {id:existing.id,status:'open'};
       const [action]=await q.query("SELECT id FROM moderation_actions WHERE action='suspend' AND report_id IN (SELECT id FROM reports WHERE target_user_id=$1) ORDER BY created_at DESC LIMIT 1",[u.id]);
-      const id=randomUUID();await q.query('INSERT INTO moderation_appeals(id,user_id,action_id,body_ciphertext) VALUES($1,$2,$3,$4)',[id,u.id,action?.id??null,ctx.crypto.seal(body,`appeal:${id}`)]);
-      await ctx.audit(q,u.id,'moderation.appeal_created',id);return {id,status:'open'};
+      if(action){
+        const [existing]=await q.query('SELECT id,status FROM moderation_appeals WHERE action_id=$1 ORDER BY created_at DESC LIMIT 1',[action.id]);
+        if(existing)return {id:existing.id,status:existing.status,alreadySubmitted:true};
+      }else{
+        const [existing]=await q.query("SELECT id,status FROM moderation_appeals WHERE user_id=$1 AND action_id IS NULL ORDER BY created_at DESC LIMIT 1",[u.id]);
+        if(existing)return {id:existing.id,status:existing.status,alreadySubmitted:true};
+      }
+      const id=randomUUID();
+      const inserted=await q.query(`INSERT INTO moderation_appeals(id,user_id,action_id,body_ciphertext) VALUES($1,$2,$3,$4)
+        ON CONFLICT (action_id) WHERE action_id IS NOT NULL DO NOTHING RETURNING id`,[id,u.id,action?.id??null,ctx.crypto.seal(body,`appeal:${id}`)]);
+      if(!inserted.length&&action){const [existing]=await q.query('SELECT id,status FROM moderation_appeals WHERE action_id=$1',[action.id]);return {id:existing.id,status:existing.status,alreadySubmitted:true};}
+      await ctx.audit(q,u.id,'moderation.appeal_created',id);return {id,status:'open',alreadySubmitted:false};
     });
     return result;
   });
@@ -82,8 +93,10 @@ export async function moderationRoutes(app:FastifyInstance,ctx:Context) {
     await ctx.moderator(req,q);const {id}=z.object({id:z.uuid()}).parse(req.params);
     const [r]=await q.query('SELECT * FROM reports WHERE id=$1',[id]);if(!r)deny(404,'not_found','Rapor bulunamadı.');
     await ctx.audit(q,req.actor.id,'moderation.evidence_viewed',id);
+    const rawEvidence=r.evidence_ciphertext?ctx.crypto.open(r.evidence_ciphertext,`evidence:${id}`):'';
+    const evidencePhotoDataUrl=r.target_type==='photo'&&rawEvidence.startsWith('data:image/')?rawEvidence:null;
     return {id:r.id,targetUserId:r.target_user_id,targetId:r.target_id,targetType:r.target_type,category:r.category,status:r.status,
-      detail:r.detail_ciphertext?ctx.crypto.open(r.detail_ciphertext,`report:${id}`):'',evidence:r.evidence_ciphertext?ctx.crypto.open(r.evidence_ciphertext,`evidence:${id}`):'',
+      detail:r.detail_ciphertext?ctx.crypto.open(r.detail_ciphertext,`report:${id}`):'',evidence:evidencePhotoDataUrl?'Fotoğrafın şikâyet anındaki kopyası saklandı.':rawEvidence,evidencePhotoDataUrl,
       actions:await q.query('SELECT action,created_at FROM moderation_actions WHERE report_id=$1 ORDER BY created_at',[id])};
   }));
   app.post('/v1/admin/reports/:id/actions',async req=>{

@@ -13,10 +13,10 @@ Teslim, yüklenen fizibilite rehberindeki bağımsız müzik eşleşme çekirde�
 | Sohbet | Eşleşmeye özel mesajlar, okundu bilgisi, silme, WebSocket yenileme olayları. |
 | Instagram | Eşleşme başına karşılıklı paylaşım, geri alma, hesap değişiminde ve engellemede izinlerin kapanması. |
 | Playlist | Ortak taslak, olumsuz tercihleri dışlama, gerekçeler, parça çıkarma ve sıralama. |
-| Güvenlik | Engelleme, raporlama, moderatör rolü, TOTP, süreli askı, itiraz, fotoğraf incelemesi, şifreli kanıt ve audit kayıtları. |
-| Gizlilik | Veri dışa aktarma, hesap silme ve zorunlu şartlardan ayrı geri alınabilir opsiyonel rıza kontrolleri. |
-| Veri altyapısı | Kalıcı yerel PGlite, dış PostgreSQL bağlantısı, SQL migration'ları ve isteğe bağlı Redis. |
-| Dağıtım temeli | API Dockerfile, healthcheck ve GitHub Actions üzerinde typecheck/test/build CI akışı. |
+| Güvenlik | Engelleme, raporlama, moderatör rolü, TOTP, süreli askı, askı başına tek itiraz, kullanıcıya moderasyon uyarısı, fotoğraf incelemesi, şikâyet anı fotoğraf kanıt snapshot'ı, şifreli kanıt ve audit kayıtları. |
+| Gizlilik | Genişletilmiş veri dışa aktarma, hesap silme ve zorunlu şartlardan ayrı, sunucu sürümlü, geri alınabilir opsiyonel rıza kontrolleri. |
+| Veri altyapısı | Kalıcı yerel PGlite, dış PostgreSQL bağlantısı, SQL migration'ları ve isteğe bağlı Redis. Süresi dolan auth action tokenları bakım işiyle temizlenir. |
+| Dağıtım temeli | Çok aşamalı API Dockerfile, healthcheck ve GitHub Actions üzerinde typecheck/test/API build/Expo web export/Docker build CI akışı. |
 | İstemci | Türkçe Expo / React Native ekranları ve web çıktısı; moderasyon aynı uygulamada. |
 | Kurulum | Kilitli npm bağımlılık listesi, ortam şablonları, kurulum/demo komutları ve operasyon rehberi. |
 
@@ -24,7 +24,7 @@ Teslim, yüklenen fizibilite rehberindeki bağımsız müzik eşleşme çekirde�
 
 | Alan | Kalan iş |
 | --- | --- |
-| Yaş doğrulama | İmzalı webhook mevcut. Gerçek sağlayıcı, doğrulamayı başlatan ekran ve sonuç dönüşü henüz bağlı değil. |
+| Yaş doğrulama | İmzalı webhook mevcut. Beta modunda başarılı doğrulama, sağlayıcının imzaladığı `birthDate` değerini zorunlu tutar ve kayıt beyanının yerine geçirir. Gerçek sağlayıcı, doğrulamayı başlatan ekran ve sonuç dönüşü henüz bağlı değil. |
 | E-posta teslimi | Doğrulama ve parola sıfırlama token akışı ile provider-neutral HTTPS teslim webhooku hazır. Gerçek e-posta sağlayıcısı bağlanmalı. |
 | Fotoğraf tarama | HTTP tarama sözleşmesi mevcut. Gerçek zararlı dosya/içerik denetim servisi bağlanmalı. |
 | Spotify | PKCE, şifreli token ve aktarım kuyruğu mevcut. Gerçek uygulama hesabı, erişim ayarları, allowlist ve parça URI eşlemeleri gerekli. |
@@ -33,12 +33,12 @@ Teslim, yüklenen fizibilite rehberindeki bağımsız müzik eşleşme çekirde�
 ## Henüz geliştirilmemiş üretim işleri
 
 1. **Lisanslı katalog:** Gerçek parça, sanatçı, kapak ve varsa önizleme kaynağı; sağlayıcıdan veri yükleme ve hak metadata'sını güncelleme aracı. Demo ses kaydı oynatmaz.
-2. **Hesap yaşam döngüsü:** Apple/Google oturumu ve moderatör MFA kurtarma akışları. E-posta doğrulama ve parola kurtarma/değiştirme artık mevcuttur.
-3. **Gizlilik arayüzü:** İşletmeye ait gerçek aydınlatma/şart metinleri ve bunların sürüm yönetimi. Opsiyonel geri alınabilir rıza kontrolleri mevcuttur.
-4. **Moderasyon operasyonu:** Kalıcı kapatma kararı, vardiya/destek kanalı, rapor SLA'ları ve ileri spam/kötüye kullanım denetimi. Süreli askı ve itiraz akışları mevcuttur.
+2. **Hesap yaşam döngüsü:** Apple/Google oturumu ve moderatör MFA kurtarma akışları. E-posta doğrulama ve parola kurtarma/değiştirme mevcuttur.
+3. **Gizlilik arayüzü:** İşletmeye ait gerçek aydınlatma/şart metinleri ve bunların merkezi sürüm yönetimi. Opsiyonel geri alınabilir rıza kontrolleri sunucu kontrollü sürümle mevcuttur.
+4. **Moderasyon operasyonu:** Kalıcı kapatma kararı, vardiya/destek kanalı, rapor SLA'ları ve ileri spam/kötüye kullanım denetimi. Süreli askı, tekil itiraz ve kullanıcı uyarıları mevcuttur.
 5. **Medya ve bildirim:** Özel obje depolama adaptörü, cihaz push bildirimleri ve arka planda mesaj bildirimi.
-6. **Dağıtım:** Alan adı, HTTPS proxy ayarı, süreç yönetimi, merkezi izleme ve alarm, yedekleme/geri yükleme otomasyonu. API Dockerfile ve CI mevcuttur.
-7. **Veri yönetimi:** KMS/zarf şifreleme, anahtar rotasyonu, genel saklama/imha zamanlayıcısı ve yedeklerde silme politikasının uygulanması.
+6. **Dağıtım:** Alan adı, HTTPS proxy ayarı, süreç yönetimi, merkezi izleme ve alarm, yedekleme/geri yükleme otomasyonu. API Dockerfile ve genişletilmiş CI mevcuttur.
+7. **Veri yönetimi:** KMS/zarf şifreleme, anahtar rotasyonu, mesaj/rapor/fotoğraf için genel saklama-imha zamanlayıcısı ve yedeklerde silme politikasının uygulanması.
 8. **Mobil yayın:** Gerçek cihaz derlemeleri, uygulama kimlikleri, ikon/açılış görselleri, OAuth deep link dönüşü, mağaza kayıt ve yayın dosyaları.
 9. **Ürün kapsamı:** Ayrı Next.js yönetim paneli, mesafe tabanlı öneri ve ayrıntılı eşleşme tercihleri. Mevcut filtreler şehir, yaş ve tanışma amacıyla sınırlıdır.
 10. **İşletim araçları:** Lisanslı katalog yönetimi, belirsiz Spotify aktarımını uzlaştırma paneli, ürün analitiği ve bekleme listesi.
@@ -47,6 +47,8 @@ Bu işler eksik yüklenmiş dosyalar değildir; bu başlangıç sürümünde hen
 
 ## Teslim ve doğrulama durumu
 
-İlk teslimde 26 otomatik test geçmiş ve Expo web çıktısı oluşturulmuştur. Bu geliştirme dalında hesap yaşam döngüsü, rıza ve moderasyon itiraz senaryoları için ek testler ile GitHub Actions CI eklenmiştir. Spotify senaryoları sahte servis yanıtlarıyla çalıştırılmıştır; gerçek Spotify hesabında aktarım, ayrı PostgreSQL sunucusu, fiziksel iOS/Android cihazı ve bulut dağıtımı hâlâ ayrıca doğrulanmalıdır.
+GitHub Actions artık her PR ve `main` push'unda bağımlılık kurulumunu, TypeScript kontrolünü, otomatik API testlerini, API build'ini, Expo web export'unu ve API Docker image build'ini çalıştırır. İkinci denetim için rıza sürümü, beta yaş attestation'ı, tek askı/tek itiraz, fotoğraf kanıt snapshot'ı ve genişletilmiş veri export'u için regresyon testleri eklenmiştir.
+
+Spotify senaryoları sahte servis yanıtlarıyla çalıştırılmıştır; gerçek Spotify hesabında aktarım, ayrı PostgreSQL sunucusu, fiziksel iOS/Android cihazı ve bulut dağıtımı hâlâ ayrıca doğrulanmalıdır.
 
 GitHub kaynak dosyalarını içerir. `node_modules`, çalışma verileri ve gerçek `.env` dosyaları kuruluma ait olup depoya dahil edilmez.
