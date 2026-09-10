@@ -17,7 +17,12 @@ CREATE TABLE IF NOT EXISTS auth_action_tokens (
 CREATE INDEX IF NOT EXISTS auth_action_tokens_user_idx ON auth_action_tokens(user_id,purpose,created_at DESC);
 CREATE INDEX IF NOT EXISTS auth_action_tokens_expiry_idx ON auth_action_tokens(expires_at) WHERE used_at IS NULL;
 
--- Only one currently granted consent of a given kind may exist per user.
+-- Older builds allowed duplicate active rows. Revoke all but the newest before enforcing uniqueness.
+WITH ranked AS (
+  SELECT id,row_number() OVER (PARTITION BY user_id,kind ORDER BY granted_at DESC,id DESC) AS rn
+  FROM consents WHERE revoked_at IS NULL
+)
+UPDATE consents SET revoked_at=now() WHERE id IN (SELECT id FROM ranked WHERE rn>1);
 CREATE UNIQUE INDEX IF NOT EXISTS consents_active_kind_idx ON consents(user_id,kind) WHERE revoked_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS moderation_appeals (
