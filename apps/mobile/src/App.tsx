@@ -6,6 +6,7 @@ import { Music,People } from './Music';
 import { Chat } from './Chat';
 import { Profile } from './Profile';
 import { Admin } from './Admin';
+import { AuthV2 } from './AuthV2';
 export default function App(){
   const [authenticated,setAuthenticated]=useState(hasSession()),[me,setMe]=useState<any>(null),[config,setConfig]=useState<any>(null),[tab,setTab]=useState('music'),[error,setError]=useState(''),[revision,setRevision]=useState(0),[ready,setReady]=useState(false);
   const {width}=useWindowDimensions(),desktop=width>=850;
@@ -14,13 +15,12 @@ export default function App(){
   const reload=useCallback(async()=>{if(!hasSession())return;try{setMe(await api.get('/v1/me'));setError('');}catch(e:any){setError(e.message);}},[]);
   useEffect(()=>{if(!authenticated)return;void reload();let dispose:(()=>void)|undefined,done=false;
     void connectEvents(()=>{setRevision(r=>r+1);void reload();}).then(fn=>{if(done)fn();else dispose=fn;});
-    // Polling recovers missed events after temporary disconnects.
     const timer=setInterval(()=>{setRevision(r=>r+1);},15000);
     return()=>{done=true;dispose?.();clearInterval(timer);};
   },[authenticated,reload]);
   async function logout(){try{await api.post('/v1/auth/logout');}finally{await saveSession(null);}}
   if(!ready)return <View style={[s.page,{justifyContent:'center'}]}><ActivityIndicator color={c.green}/></View>;
-  if(!authenticated)return <Auth config={config} connectionError={error} retryConfig={()=>void api.get('/v1/config').then(v=>{setConfig(v);setError('');}).catch(e=>setError(e.message))}/>;
+  if(!authenticated)return <AuthV2 config={config} connectionError={error} retryConfig={()=>void api.get('/v1/config').then(v=>{setConfig(v);setError('');}).catch(e=>setError(e.message))}/>;
   const tabs=[['music','♪','Müzik keşfet'],['people','✦','İnsanları keşfet'],['chat','↗','Sohbetler'],['profile','○','Profilim'],...(me?.role==='moderator'?[['admin','◈','Moderasyon']]:[])];
   function nav(compact=false){return tabs.map(([key,icon,label])=><Pressable key={key} accessibilityRole="button" accessibilityState={{selected:tab===key}} onPress={()=>{setTab(key);setError('');}} style={{flex:compact?1:undefined,flexDirection:compact?'column':'row',alignItems:'center',gap:compact?4:13,paddingVertical:compact?9:14,paddingHorizontal:compact?4:16,borderRadius:14,backgroundColor:tab===key?c.lightGreen:'transparent'}}><Text style={{fontSize:21,color:tab===key?c.green:c.muted}}>{icon}</Text><Text style={{fontSize:compact?9:13,fontWeight:tab===key?'700':'500',color:tab===key?c.green:c.muted}}>{label}</Text></Pressable>);}
   return <SafeAreaView style={s.page}><StatusBar barStyle="dark-content" backgroundColor={c.bg}/><View style={{flex:1,flexDirection:'row'}}>
