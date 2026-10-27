@@ -25,7 +25,7 @@ export function weightedJaccard(a:Record<string,number>,b:Record<string,number>)
   return max?min/max:0;
 }
 export function compatibility(a:Taste,b:Taste,completeness=1,activity=1) {
-  const commonArtists=Object.keys(a.artists).filter(k=>b.artists[k]);
+  const commonArtists=Object.keys(a.artists).filter(k=>b.artists[k]).sort((x,y)=>x.localeCompare(y,'tr'));
   const commonTracks=Object.keys(a.tracks).filter(k=>b.tracks[k]);
   const commonGenres=Object.keys(a.tags).filter(k=>k.startsWith('genre:')&&b.tags[k]).map(k=>k.slice(6));
   const commonDecades=Object.keys(a.tags).filter(k=>k.startsWith('decade:')&&b.tags[k]).map(k=>k.slice(7)).sort();
@@ -35,7 +35,7 @@ export function compatibility(a:Taste,b:Taste,completeness=1,activity=1) {
   const music=Math.max(0,Math.min(100,100*(.4*components.artist+.3*components.track+.2*components.tags+.1*components.exploration)-Math.min(30,100*conflicts/denominator)));
   const rank=.7*music+15*Math.max(0,Math.min(1,completeness))+10*Math.max(0,Math.min(1,activity))+5*Math.min(a.exploration,b.exploration);
   return {version:ALGORITHM_VERSION,musicScore:Math.round(music),rankingScore:Math.round(rank),commonArtists,commonTracks:commonTracks.length,commonGenres,commonDecades,conflicts,
-    reasons:[`${commonArtists.length} ortak sanatçı`,`${commonTracks.length} ortak şarkı`,...(commonGenres.length?[`Ortak türler: ${commonGenres.slice(0,3).join(', ')}`]:[]),...(commonDecades.length?[`Ortak dönemler: ${commonDecades.slice(0,3).join(', ')}`]:[])]};
+    reasons:[`${commonArtists.length} ortak sanatçı`,...(commonArtists.length?[`Ortak sanatçılar: ${commonArtists.slice(0,3).join(', ')}`]:[]),`${commonTracks.length} ortak şarkı`,...(commonGenres.length?[`Ortak türler: ${commonGenres.slice(0,3).join(', ')}`]:[]),...(commonDecades.length?[`Ortak dönemler: ${commonDecades.slice(0,3).join(', ')}`]:[])]};
 }
 export type PlaylistItem={trackId:string;reason:string;source:'a'|'b'|'discovery'|'shared'};
 export function createPlaylist(catalog:Track[],a:Taste,b:Taste,allowExplicit:boolean,size=25):PlaylistItem[] {
