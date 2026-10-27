@@ -1,0 +1,24 @@
+name: Local API health CLI tests
+
+on:
+  push:
+    paths:
+      - 'scripts/check-health.mjs'
+      - 'scripts/check-health.test.mjs'
+      - '.github/workflows/health-cli.yml'
+  pull_request:
+    paths:
+      - 'scripts/check-health.mjs'
+      - 'scripts/check-health.test.mjs'
+      - '.github/workflows/health-cli.yml'
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test scripts/check-health.test.mjs
+      - run: node --check scripts/check-health.mjs
