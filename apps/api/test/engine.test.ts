@@ -23,3 +23,15 @@ test('playlist excludes dislikes/explicit content, deduplicates recordings, inte
   assert.equal(items.length,25);assert.deepEqual(items,createPlaylist(tracks,a,b,false));assert(items.every(i=>i.reason.length>0));
   const selected=items.map(i=>tracks.find(t=>t.id===i.trackId)!);assert(selected.every(t=>!t.explicit&&!a.negative.includes(t.id)&&!b.negative.includes(t.id)));assert.equal(new Set(selected.map(t=>t.recording_id)).size,items.length);assert(selected.slice(1).every((t,i)=>t.artist!==selected[i].artist));assert(items.some(i=>i.source==='discovery'));
 });
+
+test('matching explains shared decades in a stable order without inventing overlaps',()=>{
+  const base={artists:{},tracks:{},negative:[],exploration:0.5,rated:0};
+  const a={...base,tags:{'decade:1990s':2,'decade:1980s':1,'genre:Rock':1}};
+  const b={...base,tags:{'decade:1980s':2,'decade:1990s':1,'decade:2000s':1}};
+  const shared=compatibility(a,b);
+  assert.deepEqual(shared.commonDecades,['1980s','1990s']);
+  assert(shared.reasons.includes('Ortak dönemler: 1980s, 1990s'));
+  const unrelated=compatibility(a,{...base,tags:{'decade:2010s':1}});
+  assert.deepEqual(unrelated.commonDecades,[]);
+  assert(!unrelated.reasons.some(reason=>reason.startsWith('Ortak dönemler:')));
+});
