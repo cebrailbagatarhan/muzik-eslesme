@@ -19,5 +19,8 @@
     "build": "npm run build -w @ahenk/api",
     "check": "npm run typecheck && npm test && npm run build",
     "moderator": "npm run moderator -w @ahenk/api"
+  },
+  "overrides": {
+    "zod": "^4.6.6"
   }
 }
