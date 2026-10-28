@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { favoriteDecades } from '../src/taste-summary.js';
+import { favoriteDecades, genreBreakdown } from '../src/taste-summary.js';
 
 test('returns up to three favorite decades in weighted order', () => {
   assert.deepEqual(favoriteDecades({
@@ -28,4 +28,35 @@ test('ignores empty, non-finite and non-positive decade tags', () => {
     'genre:2000': 9,
   }), []);
   assert.deepEqual(favoriteDecades({}), []);
+});
+
+test('genre breakdown returns percentages of all positive genre weights', () => {
+  const tags = { 'genre:Rock': 3, 'genre:Pop': 1, 'decade:1990': 100 };
+  assert.deepEqual(genreBreakdown(tags), [
+    { name: 'Rock', percentage: 75 },
+    { name: 'Pop', percentage: 25 },
+  ]);
+  assert.deepEqual(tags, { 'genre:Rock': 3, 'genre:Pop': 1, 'decade:1990': 100 });
+});
+
+test('genre breakdown sorts ties and rounds fractional shares', () => {
+  assert.deepEqual(genreBreakdown({
+    'genre:Jazz': 1, 'genre:Blues': 1, 'genre:Rock': 1,
+  }), [
+    { name: 'Blues', percentage: 33.3 },
+    { name: 'Jazz', percentage: 33.3 },
+    { name: 'Rock', percentage: 33.3 },
+  ]);
+});
+
+test('genre breakdown ignores invalid weights and empty tags', () => {
+  assert.deepEqual(genreBreakdown({
+    'genre:': 3, 'genre:Rock': 0, 'genre:Pop': -2,
+    'genre:Jazz': Number.NaN, 'genre:Blues': Number.POSITIVE_INFINITY,
+    'decade:2000': 4,
+  }), []);
+  assert.deepEqual(genreBreakdown({ 'genre:Rock': 2, 'genre:Pop': Number.NaN }), [
+    { name: 'Rock', percentage: 100 },
+  ]);
+  assert.deepEqual(genreBreakdown({}), []);
 });
