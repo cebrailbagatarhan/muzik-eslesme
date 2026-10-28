@@ -12,6 +12,8 @@ test('rejects malformed options before any request', () => {
   assert.throws(() => parseOptions(['--port', '99999']), /Port/);
   assert.throws(() => parseOptions(['--timeout-ms', '50']), /Timeout/);
   assert.throws(() => parseOptions(['--host', 'example.com']), /Usage/);
+  assert.throws(() => parseOptions(['--json', '--json']), /Usage/);
+  assert.throws(() => parseOptions(['--port', '--json']), /Usage/);
 });
 
 test('checks only loopback health and verifies status body', async () => {
@@ -41,6 +43,26 @@ test('main returns expected exit codes', async () => {
     assert.equal(await main([], async () => ({ ok: true, json: async () => ({ status: 'ok' }) })), 0);
     assert.equal(await main([], async () => ({ ok: false })), 1);
     assert.equal(await main(['--port', 'bad'], async () => { throw new Error('should not request'); }), 2);
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+});
+
+test('JSON output reports healthy and unhealthy statuses without changing exit codes', async () => {
+  const originalLog = console.log;
+  const originalError = console.error;
+  const output = [];
+  const errors = [];
+  console.log = (message) => output.push(message);
+  console.error = (message) => errors.push(message);
+  try {
+    assert.deepEqual(parseOptions(['--json', '--port', '4050']), { port: 4050, timeoutMs: 3000, json: true });
+    assert.equal(await main(['--port', '4050', '--json'], async () => ({ ok: true, json: async () => ({ status: 'ok' }) })), 0);
+    assert.deepEqual(JSON.parse(output.pop()), { status: 'ok', port: 4050 });
+    assert.equal(await main(['--json'], async () => ({ ok: false })), 1);
+    assert.deepEqual(JSON.parse(output.pop()), { status: 'unavailable', port: 4000 });
+    assert.deepEqual(errors, []);
   } finally {
     console.log = originalLog;
     console.error = originalError;
