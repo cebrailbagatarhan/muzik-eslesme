@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { Context } from './context.js';
 import { ALGORITHM_VERSION,compatibility,tasteProfile } from './engine.js';
-import { favoriteDecades } from './taste-summary.js';
+import { favoriteDecades, genreBreakdown } from './taste-summary.js';
 import { ageOn,birthString,deny,instagramName,checkPassword } from './security.js';
 const profileSchema=z.object({
   displayName:z.string().trim().min(2).max(40),bio:z.string().trim().max(280),city:z.string().trim().min(2).max(60),
@@ -88,7 +88,7 @@ export async function coreRoutes(app:FastifyInstance,ctx:Context) {
     const u=await ctx.user(q,req.actor.id),taste=await ctx.taste(q,u);
     return {version:ALGORITHM_VERSION,rated:taste.rated,requiredRatings:ctx.config.minRatings,complete:taste.rated>=ctx.config.minRatings,
       favoriteArtists:Object.entries(taste.artists).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,weight])=>({name,weight})),
-      favoriteGenres:Object.entries(taste.tags).filter(([tag])=>tag.startsWith('genre:')).sort((a,b)=>b[1]-a[1]).map(([name,weight])=>({name:name.slice(6),weight})),favoriteDecades:favoriteDecades(taste.tags),exploration:taste.exploration};
+      favoriteGenres:Object.entries(taste.tags).filter(([tag])=>tag.startsWith('genre:')).sort((a,b)=>b[1]-a[1]).map(([name,weight])=>({name:name.slice(6),weight})),favoriteDecades:favoriteDecades(taste.tags),genreBreakdown:genreBreakdown(taste.tags),exploration:taste.exploration};
   }));
   app.get('/v1/people/feed',async req=>ctx.db.tx(async q=>{
     const me=await ctx.user(q,req.actor.id),catalog=await ctx.catalog(q),myTaste=await ctx.taste(q,me,catalog);
